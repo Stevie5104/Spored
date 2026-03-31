@@ -24,6 +24,9 @@ local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService       = game:GetService("RunService")
 local Workspace        = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local OrganismEntity = require(ReplicatedStorage.Modules.OrganismEntity)
 
 local player = Players.LocalPlayer
 
@@ -39,7 +42,7 @@ local STOP_DIST    = 1.5    -- studs; organism stops when within this of the cli
 -- Y of the ground plane used for mouse raycasting.
 local MOVE_PLANE_Y = 0
 -- Y of the organism root centre above the ground plane.
--- Must match SPAWN_Y in CharacterService so the organism is flush with the
+-- Must match the spawn height in OrganismService so the organism is flush with the
 -- ground from the first frame.
 local ORGANISM_Y   = 1.0
 
@@ -111,9 +114,9 @@ end
 
 local function bindCharacter(char: Model)
 	-- The custom organism has no Humanoid – only wait for the root part.
-	local root = char:WaitForChild("HumanoidRootPart", 10) :: BasePart?
+	local root = char:WaitForChild("OrganismRootPart", 10) :: BasePart?
 	if not root then
-		warn("[MovementController] HumanoidRootPart not found in character.")
+		warn("[MovementController] OrganismRootPart not found in character.")
 		return
 	end
 
