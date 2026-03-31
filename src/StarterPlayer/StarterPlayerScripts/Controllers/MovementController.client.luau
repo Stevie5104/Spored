@@ -119,6 +119,9 @@ end
 --
 -- To disable drag: set DRAG_ENABLED = false at the top of this file.
 
+-- Tracks whether the left mouse button is currently held for click-and-drag movement.
+local mouseHeld = false
+
 UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
 	if processed then return end
 

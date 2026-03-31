@@ -7,11 +7,17 @@
 --   E → Core slot ability
 --   R → Rear slot ability
 --   (Extensible pattern for additional slots)
+--
+-- Cooldowns are read from PartData for the currently equipped part.
+-- The BuildChanged RemoteEvent keeps currentBuild in sync with the server.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local PartData = require(ReplicatedStorage.Modules.PartData)
 
 local player = Players.LocalPlayer
 
@@ -42,20 +48,46 @@ local function mouseToPlane(planeY: number): Vector3?
 	return ray.Origin + dir * t
 end
 
--- ── RemoteEvent reference (created by CombatService.Init on server) ──────────
-local attackRemote: RemoteEvent? = nil
+-- ── Client-side build state (kept in sync via BuildChanged RemoteEvent) ───────
+local currentBuild: { BodyId: string, Slots: { [string]: string } } = {
+	BodyId = "StarterBlob",
+	Slots = {},
+}
 
-local function getAttackRemote(): RemoteEvent?
-	if attackRemote then return attackRemote end
-	local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-	if remotes then
-		attackRemote = remotes:FindFirstChild("PartAttack") :: RemoteEvent?
+-- ── RemoteEvent/Function references ─────────────────────────────────────────
+local attackRemote: RemoteEvent? = nil
+local buildChangedRemote: RemoteEvent? = nil
+
+-- Wait until Remotes folder exists (server creates it during Init).
+task.spawn(function()
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10) :: Folder?
+	if not remotes then
+		warn("[AbilityController] Remotes folder not found.")
+		return
 	end
-	return attackRemote
-end
+
+	attackRemote = remotes:WaitForChild("PartAttack", 10) :: RemoteEvent?
+	buildChangedRemote = remotes:WaitForChild("BuildChanged", 10) :: RemoteEvent?
+
+	if buildChangedRemote then
+		-- Update local build state whenever the server broadcasts a change.
+		buildChangedRemote.OnClientEvent:Connect(function(bodyId: unknown, slots: unknown)
+			if typeof(bodyId) == "string" and typeof(slots) == "table" then
+				currentBuild.BodyId = bodyId :: string
+				-- Replace slots table with the server snapshot.
+				local newSlots: { [string]: string } = {}
+				for k, v in slots :: { [any]: any } do
+					if typeof(k) == "string" and typeof(v) == "string" then
+						newSlots[k :: string] = v :: string
+					end
+				end
+				currentBuild.Slots = newSlots
+			end
+		end)
+	end
+end)
 
 -- ── Aim direction toward cursor ───────────────────────────────────────────────
--- Returns a unit Vector3 pointing from the organism toward the cursor world pos.
 local function getAimDirection(): Vector3?
 	local character = player.Character
 	if not character then return nil end
@@ -71,8 +103,6 @@ local function getAimDirection(): Vector3?
 end
 
 -- ── Target finding: nearest enemy in aim direction ────────────────────────────
--- Returns the EnemyId value of the closest enemy model within a cone in front
--- of the cursor direction, up to maxRange studs.
 local function findTargetInAim(maxRange: number): number?
 	local character = player.Character
 	if not character then return nil end
@@ -86,7 +116,7 @@ local function findTargetInAim(maxRange: number): number?
 	if not enemiesFolder then return nil end
 
 	local bestId: number? = nil
-	local bestDot = 0.5 -- minimum cos(angle) for cone (~60 degree half-angle)
+	local bestDot = 0.5  -- minimum cos(angle) (~60-degree half-cone)
 
 	for _, child in enemiesFolder:GetChildren() do
 		local model = child :: Model
@@ -116,17 +146,27 @@ local function findTargetInAim(maxRange: number): number?
 end
 
 -- ── Per-slot cooldown tracking ────────────────────────────────────────────────
-local cooldowns: { [string]: number } = {}
-local SLOT_COOLDOWN_DEFAULT = 1.0
+-- Records the os.clock() time at last activation for each partId.
+local cooldownTimestamps: { [string]: number } = {}
+local FALLBACK_COOLDOWN = 1.0  -- used when equipped part is unknown
 
-local function canActivate(slot: string): boolean
-	local last = cooldowns[slot]
-	if not last then return true end
-	return (os.clock() - last) >= SLOT_COOLDOWN_DEFAULT
+-- Returns the cooldown duration for the part currently in a given slot.
+local function getPartCooldown(partId: string): number
+	local partDef = PartData[partId]
+	if partDef then
+		return partDef.Cooldown
+	end
+	return FALLBACK_COOLDOWN
 end
 
-local function markCooldown(slot: string)
-	cooldowns[slot] = os.clock()
+local function canActivate(partId: string): boolean
+	local last = cooldownTimestamps[partId]
+	if not last then return true end
+	return (os.clock() - last) >= getPartCooldown(partId)
+end
+
+local function markCooldown(partId: string)
+	cooldownTimestamps[partId] = os.clock()
 end
 
 -- ── Input: ability activation ─────────────────────────────────────────────────
@@ -135,31 +175,26 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
 
 	local slot = SLOT_KEYS[input.KeyCode]
 	if not slot then return end
-	if not canActivate(slot) then return end
 
-	-- MVP stub: part equipped in this slot.
-	-- In the full implementation this is resolved from the player's active build
-	-- synced from PlayerBuildService. Slot name is used as a placeholder partId
-	-- until the client-side build state module is wired up.
-	local partId = slot .. "Part"
+	-- Resolve partId from current build state.
+	local partId = currentBuild.Slots[slot]
+	if not partId then return end  -- no part equipped in this slot
 
-	-- Targeting range in studs. Should ultimately be derived from the part's Range
-	-- stat once the client build state is available.
-	local ABILITY_RANGE = 12
-	local targetId = findTargetInAim(ABILITY_RANGE)
+	if not canActivate(partId) then return end
+
+	-- Look up the part's stated range for targeting.
+	local partDef = PartData[partId]
+	local abilityRange = if partDef then partDef.Range else 12
+
+	local targetId = findTargetInAim(abilityRange)
 	if not targetId then return end
 
-	local remote = getAttackRemote()
+	local remote = attackRemote
 	if not remote then
-		warn("[AbilityController] PartAttack remote not found.")
+		warn("[AbilityController] PartAttack remote not ready.")
 		return
 	end
 
-	markCooldown(slot)
+	markCooldown(partId)
 	remote:FireServer(partId, targetId)
 end)
-
--- ── Expose aim direction for other controllers (e.g., movement WASD aim) ──────
--- This module intentionally exports nothing at runtime; controllers communicate
--- via shared Remotes. Aim utilities above are also duplicated in MovementController
--- to keep controllers independent. A shared Utility module can be extracted later.
