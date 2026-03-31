@@ -92,6 +92,18 @@ function LootService.GetInventory(player: Player): { [string]: number }
 	return getInventory(player)
 end
 
+-- Bulk-load an inventory snapshot for a player (used by DataService on join).
+-- Merges with any existing inventory entries rather than replacing outright,
+-- so it is safe to call even if in-session drops have already been recorded.
+function LootService.LoadInventory(player: Player, data: { [string]: number })
+	local inv = getInventory(player)
+	for partId, count in data do
+		if typeof(partId) == "string" and typeof(count) == "number" and count > 0 then
+			inv[partId] = (inv[partId] or 0) + count
+		end
+	end
+end
+
 function LootService.Init()
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 	local remoteFolder = ReplicatedStorage:FindFirstChild("Remotes")
