@@ -1,5 +1,6 @@
 --!strict
--- MovementController: top-down organism movement supporting two input modes.
+-- MovementController: top-down organism movement for the custom organism entity.
+-- No Humanoid or default Roblox character controller is used.
 --
 -- Mode 1 (ClickToMove):
 --   • Single click  – organism swims to the clicked world position.
@@ -19,25 +20,28 @@
 -- player's build changes (BuildChanged RemoteEvent) so that equipped parts such
 -- as DashFlagella (+10 speed via Swift trait) take effect immediately.
 
-local Players         = game:GetService("Players")
+local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local RunService      = game:GetService("RunService")
-local Workspace       = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local OrganismEntity  = require(ReplicatedStorage.Modules.OrganismEntity)
+local RunService       = game:GetService("RunService")
+local Workspace        = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 
--- ── Live movement stats (updated from OrganismEntity.ComputeStats) ────────────
--- These defaults match the StarterBlob body and are overwritten on the first
--- BuildChanged event, so they are always accurate once a build is broadcast.
-local MOVE_SPEED  : number = 24
-local ACCELERATION: number = 80
-local TURN_SPEED  : number = math.rad(540)
-local DRAG        = 10
-local STOP_DIST   = 1.5
+-- ── Movement stats (configurable; will be driven by body/part upgrades later) ─
+-- NOTE: Values are intentionally high for development / testing.
+-- Tune down via equipped parts once progression systems are in place.
+local MOVE_SPEED   = 80     -- studs/s max speed (dev-boosted; design target ~24)
+local ACCELERATION = 200    -- studs/s²  – how quickly the organism reaches max speed
+local DRAG         = 8      -- velocity decay coefficient  (higher = snappier stop)
+local TURN_SPEED   = math.rad(720)  -- radians/s rotation speed (dev-boosted)
+local STOP_DIST    = 1.5    -- studs; organism stops when within this of the click target
+
+-- Y of the ground plane used for mouse raycasting.
 local MOVE_PLANE_Y = 0
+-- Y of the organism root centre above the ground plane.
+-- Must match SPAWN_Y in CharacterService so the organism is flush with the
+-- ground from the first frame.
+local ORGANISM_Y   = 1.0
 
 -- ── Feature flags ─────────────────────────────────────────────────────────────
 -- Set DRAG_ENABLED = false to revert to single-click-only behaviour.
@@ -49,7 +53,8 @@ local controlMode: ControlMode = "ClickToMove"
 
 -- ── Runtime state ─────────────────────────────────────────────────────────────
 local rootPart: BasePart? = nil
-local velocity = Vector3.zero
+local velocity   = Vector3.zero
+local currentYaw = 0         -- current organism facing angle (radians)
 local clickTarget: Vector3? = nil
 
 -- isDragging is true while MouseButton1 is held in ClickToMove mode.
@@ -72,8 +77,8 @@ local function mouseToPlane(planeY: number): Vector3?
 	if not cam then return nil end
 
 	local mousePos = UserInputService:GetMouseLocation()
-	local ray = cam:ViewportPointToRay(mousePos.X, mousePos.Y)
-	local dir = ray.Direction
+	local ray      = cam:ViewportPointToRay(mousePos.X, mousePos.Y)
+	local dir      = ray.Direction
 
 	if math.abs(dir.Y) < 1e-5 then return nil end
 	local t = (planeY - ray.Origin.Y) / dir.Y
@@ -89,17 +94,14 @@ local function recomputeMoveInput()
 	moveInput = if v.Magnitude > 1 then v.Unit else v
 end
 
--- Smoothly rotate rootPart CFrame toward a flat direction by at most TURN_SPEED*dt.
-local function rotateToward(current: CFrame, dir: Vector3, dt: number): CFrame
+-- Advance yaw toward a flat world direction by at most TURN_SPEED*dt radians.
+-- Returns the updated yaw angle.
+local function stepYaw(yaw: number, dir: Vector3, dt: number): number
 	local flat = flatten(dir)
-	if flat.Magnitude < 1e-4 then return current end
-
+	if flat.Magnitude < 1e-4 then return yaw end
 	local desired = math.atan2(-flat.X, -flat.Z)
-	local _, currentYaw, _ = current:ToOrientation()
-	local delta = ((desired - currentYaw + math.pi) % (2 * math.pi)) - math.pi
-	local step = math.clamp(delta, -TURN_SPEED * dt, TURN_SPEED * dt)
-
-	return CFrame.new(current.Position) * CFrame.Angles(0, currentYaw + step, 0)
+	local delta   = ((desired - yaw + math.pi) % (2 * math.pi)) - math.pi
+	return yaw + math.clamp(delta, -TURN_SPEED * dt, TURN_SPEED * dt)
 end
 
 -- ── Character binding ──────────────────────────────────────────────────────────
@@ -108,10 +110,21 @@ end
 -- Humanoid, so movement is applied purely through AssemblyLinearVelocity.
 
 local function bindCharacter(char: Model)
-	rootPart = char:WaitForChild("OrganismRootPart") :: BasePart
-	velocity    = Vector3.zero
+	-- The custom organism has no Humanoid – only wait for the root part.
+	local root = char:WaitForChild("HumanoidRootPart", 10) :: BasePart?
+	if not root then
+		warn("[MovementController] HumanoidRootPart not found in character.")
+		return
+	end
+
+	rootPart  = root
+	velocity  = Vector3.zero
 	clickTarget = nil
 	isDragging  = false
+
+	-- Sync facing from the spawned CFrame so rotation continues smoothly.
+	local _, yaw, _ = root.CFrame:ToOrientation()
+	currentYaw = yaw
 end
 
 player.CharacterAdded:Connect(bindCharacter)
@@ -193,10 +206,10 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
 		clickTarget = nil
 		isDragging  = false
 
-	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = true; recomputeMoveInput()
-	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = true; recomputeMoveInput()
-	elseif input.KeyCode == Enum.KeyCode.S then keyState.S = true; recomputeMoveInput()
-	elseif input.KeyCode == Enum.KeyCode.D then keyState.D = true; recomputeMoveInput()
+	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = true;  recomputeMoveInput()
+	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = true;  recomputeMoveInput()
+	elseif input.KeyCode == Enum.KeyCode.S then keyState.S = true;  recomputeMoveInput()
+	elseif input.KeyCode == Enum.KeyCode.D then keyState.D = true;  recomputeMoveInput()
 	end
 end)
 
@@ -217,10 +230,11 @@ end)
 -- ── Shared movement backend (RenderStepped) ───────────────────────────────────
 
 RunService.RenderStepped:Connect(function(dt: number)
-	if not rootPart then return end
+	local root = rootPart
+	if not root then return end
 
-	local pos           = rootPart.Position
-	local desiredMoveDir  = Vector3.zero
+	local pos            = root.Position
+	local desiredMoveDir = Vector3.zero
 	local desiredFacingDir = Vector3.zero
 
 	if controlMode == "ClickToMove" then
@@ -238,7 +252,7 @@ RunService.RenderStepped:Connect(function(dt: number)
 			if toTarget.Magnitude <= STOP_DIST then
 				clickTarget = nil
 			else
-				desiredMoveDir  = toTarget.Unit
+				desiredMoveDir   = toTarget.Unit
 				desiredFacingDir = desiredMoveDir
 			end
 		end
@@ -251,7 +265,7 @@ RunService.RenderStepped:Connect(function(dt: number)
 			if look.Magnitude  > 1e-4 then look  = look.Unit  end
 			if right.Magnitude > 1e-4 then right = right.Unit end
 
-			local world = right * moveInput.X + look * moveInput.Z
+			local world  = right * moveInput.X + look * moveInput.Z
 			desiredMoveDir = if world.Magnitude > 1 then world.Unit else world
 		end
 
@@ -265,23 +279,34 @@ RunService.RenderStepped:Connect(function(dt: number)
 		end
 	end
 
-	-- Acceleration toward desired velocity.
-	local target = desiredMoveDir * MOVE_SPEED
-	local dv     = target - velocity
-	local step   = ACCELERATION * dt
+	-- ── Velocity update (shared acceleration + drag backend) ─────────────────
+	-- Both ClickToMove and WASDMouseAim feed desiredMoveDir into the same
+	-- physics model so max speed and feel are identical across input methods.
+	local targetVel = desiredMoveDir * MOVE_SPEED
+	local dv        = targetVel - velocity
+	local step      = ACCELERATION * dt
 	velocity += if dv.Magnitude > step then dv.Unit * step else dv
 
-	-- Drag (floaty decay).
+	-- Drag (floaty decay toward zero when no input).
 	velocity *= math.max(0, 1 - DRAG * dt)
 
-	-- Apply horizontal velocity while preserving physics Y.
-	local currentY = rootPart.AssemblyLinearVelocity.Y
-	rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, currentY, velocity.Z)
+	-- ── Position update (CFrame-driven; organism constrained to horizontal plane)
+	-- The root part is Anchored so we write the CFrame directly each frame.
+	-- ORGANISM_Y keeps the organism at a fixed height above the ground plane.
+	local newPos = Vector3.new(
+		pos.X + velocity.X * dt,
+		ORGANISM_Y,
+		pos.Z + velocity.Z * dt
+	)
 
-	-- Rotation: prefer move direction; fall back to aim direction.
+	-- ── Rotation update (smooth yaw interpolation) ────────────────────────────
+	-- Prefer move direction for facing; fall back to explicit aim direction
+	-- (e.g. mouse cursor in WASDMouseAim with no WASD keys held).
 	local facing = if desiredMoveDir.Magnitude > 0.05 then desiredMoveDir else desiredFacingDir
 	if facing.Magnitude > 0.01 then
-		rootPart.CFrame = rotateToward(rootPart.CFrame, facing, dt)
+		currentYaw = stepYaw(currentYaw, facing, dt)
 	end
+
+	root.CFrame = CFrame.new(newPos) * CFrame.Angles(0, currentYaw, 0)
 end)
 
