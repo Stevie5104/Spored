@@ -68,13 +68,12 @@ function CombatService.HandlePartAttack(
 	partId: string,
 	targetId: number
 ): boolean
-	-- Validate attacker character exists and is alive.
+	-- Validate attacker character exists and has a root part.
 	local character = attacker.Character
 	if not character then return false end
 	local attackerRoot = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not attackerRoot then return false end
-	local attackerHumanoid = character:FindFirstChildOfClass("Humanoid") :: Humanoid?
-	if not attackerHumanoid or attackerHumanoid.Health <= 0 then return false end
+	-- No Humanoid check: the player uses a custom organism with no Humanoid.
 
 	-- Validate the part definition exists.
 	local partDef = PartData[partId]
