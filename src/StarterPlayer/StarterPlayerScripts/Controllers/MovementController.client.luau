@@ -94,11 +94,15 @@ end
 
 -- ── Input handling ────────────────────────────────────────────────────────────
 
+-- Tracks whether the left mouse button is currently held for click-and-drag movement.
+local mouseHeld = false
+
 UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
 	if processed then return end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		if controlMode == "ClickToMove" then
+			mouseHeld = true
 			clickTarget = mouseToPlane(MOVE_PLANE_Y)
 		end
 
@@ -119,7 +123,9 @@ end)
 UserInputService.InputEnded:Connect(function(input: InputObject, processed: boolean)
 	if processed then return end
 
-	if input.KeyCode == Enum.KeyCode.W then keyState.W = false; recomputeMoveInput()
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		mouseHeld = false
+	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.S then keyState.S = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.D then keyState.D = false; recomputeMoveInput()
@@ -137,6 +143,11 @@ RunService.RenderStepped:Connect(function(dt: number)
 	local desiredFacingDir = Vector3.zero
 
 	if controlMode == "ClickToMove" then
+		-- While mouse button is held, continuously drag the target to the cursor position.
+		if mouseHeld then
+			clickTarget = mouseToPlane(MOVE_PLANE_Y)
+		end
+
 		if clickTarget then
 			local toTarget = flatten(clickTarget - pos)
 			if toTarget.Magnitude <= STOP_DIST then

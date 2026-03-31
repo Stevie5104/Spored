@@ -1,5 +1,6 @@
 --!strict
 -- EnemyService: spawns and initializes NPC enemies from EnemyData, connects death->loot flow.
+-- Each enemy type runs a dedicated AI module updated via a Heartbeat loop.
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -7,6 +8,20 @@ local RunService = game:GetService("RunService")
 
 local EnemyData = require(game:GetService("ReplicatedStorage").Modules.EnemyData)
 local LootService = require(script.Parent.LootService)
+
+-- AI modules (loaded at the bottom of Init to avoid any load-order issues).
+local GrazerAI = require(script.Parent.AI.GrazerAI)
+local SpikeWormAI = require(script.Parent.AI.SpikeWormAI)
+local VenomBlobAI = require(script.Parent.AI.VenomBlobAI)
+
+-- CombatService is required lazily to avoid circular dependency.
+local CombatService: any = nil
+local function getCombat()
+	if not CombatService then
+		CombatService = require(script.Parent.CombatService)
+	end
+	return CombatService
+end
 
 local EnemyService = {}
 
@@ -17,13 +32,15 @@ local enemiesFolder: Folder
 local nextEnemyId = 1
 
 -- Active enemy state table.
-local activeEnemies: {
-	[number]: {
-		Model: Model,
-		TypeId: string,
-		Humanoid: Humanoid,
-	}
-} = {}
+type EnemyEntry = {
+	Model: Model,
+	TypeId: string,
+	Humanoid: Humanoid,
+	SpawnPos: Vector3,
+	AIState: any,   -- type varies per AI module
+}
+
+local activeEnemies: { [number]: EnemyEntry } = {}
 
 -- Create a simple placeholder enemy model (sphere body + humanoid).
 local function buildEnemyModel(typeId: string, def: EnemyData.EnemyDef): Model
@@ -35,6 +52,20 @@ local function buildEnemyModel(typeId: string, def: EnemyData.EnemyDef): Model
 	root.Size = Vector3.new(2, 2, 2)
 	root.Shape = Enum.PartType.Ball
 	root.CastShadow = false
+
+	-- Give each enemy type a distinct color for readability.
+	if typeId == "Grazer" then
+		root.Color = Color3.fromRGB(80, 200, 100)    -- green
+	elseif typeId == "SpikeWorm" then
+		root.Color = Color3.fromRGB(200, 80, 80)     -- red
+	elseif typeId == "VenomBlob" then
+		root.Color = Color3.fromRGB(130, 60, 200)    -- purple
+	elseif typeId == "HunterCell" then
+		root.Color = Color3.fromRGB(220, 140, 40)    -- orange
+	else
+		root.Color = Color3.fromRGB(180, 180, 180)
+	end
+
 	root.Parent = model
 
 	local humanoid = Instance.new("Humanoid")
@@ -77,13 +108,31 @@ function EnemyService.SpawnEnemy(typeId: string, position: Vector3): Model?
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 
-	activeEnemies[id] = { Model = model, TypeId = typeId, Humanoid = humanoid }
+	-- Build AI state for this instance.
+	local aiState: any
+	if typeId == "Grazer" then
+		aiState = GrazerAI.NewState(position)
+	elseif typeId == "SpikeWorm" then
+		aiState = SpikeWormAI.NewState(position)
+	elseif typeId == "VenomBlob" then
+		aiState = VenomBlobAI.NewState()
+	else
+		aiState = {}  -- no AI for other types yet
+	end
+
+	activeEnemies[id] = {
+		Model = model,
+		TypeId = typeId,
+		Humanoid = humanoid,
+		SpawnPos = position,
+		AIState = aiState,
+	}
 
 	-- Death handler: award loot to the nearest player.
 	humanoid.Died:Connect(function()
 		activeEnemies[id] = nil
 
-		-- Award loot to a nearby player (nearest within 40 studs).
+		-- Award loot to the nearest player within 40 studs.
 		local bestPlayer: Player? = nil
 		local bestDist = 40
 		for _, player in Players:GetPlayers() do
@@ -119,6 +168,43 @@ function EnemyService.SpawnEnemy(typeId: string, position: Vector3): Model?
 	return model
 end
 
+-- AI update loop: runs every ~0.1s and ticks each active enemy's behavior.
+-- NOTE: For larger enemy counts (50+), consider level-of-detail AI ticking that
+-- skips updates for enemies outside any player's view distance.
+local AI_TICK = 0.1
+local aiAccumulator = 0
+
+local function onHeartbeat(dt: number)
+	aiAccumulator += dt
+	if aiAccumulator < AI_TICK then return end
+	local tickDt = aiAccumulator
+	aiAccumulator = 0
+
+	local combat = getCombat()
+
+	for id, entry in activeEnemies do
+		if not entry.Model.Parent then
+			-- Model was removed externally; clean up entry.
+			activeEnemies[id] = nil
+			continue
+		end
+
+		local typeId = entry.TypeId
+		local def = EnemyData[typeId]
+		if not def then continue end
+
+		if typeId == "Grazer" then
+			GrazerAI.Update(entry.Model, def, entry.AIState, tickDt, entry.SpawnPos)
+
+		elseif typeId == "SpikeWorm" then
+			SpikeWormAI.Update(entry.Model, def, entry.AIState, tickDt, entry.SpawnPos, combat)
+
+		elseif typeId == "VenomBlob" then
+			VenomBlobAI.Update(entry.Model, def, entry.AIState, tickDt, combat)
+		end
+	end
+end
+
 -- Simple wave spawn: spawn a mix of enemies around the map at startup.
 local function spawnInitialWave()
 	local spawnPoints = {
@@ -145,6 +231,9 @@ function EnemyService.Init()
 		enemiesFolder.Name = "Enemies"
 		enemiesFolder.Parent = Workspace
 	end
+
+	-- Start the AI tick loop.
+	RunService.Heartbeat:Connect(onHeartbeat)
 
 	-- Wait for game to load, then spawn initial wave.
 	task.delay(2, spawnInitialWave)

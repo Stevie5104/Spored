@@ -4,11 +4,18 @@
 local CurrencyService = require(script.Parent.CurrencyService)
 local CombatService = require(script.Parent.CombatService)
 local PlayerBuildService = require(script.Parent.PlayerBuildService)
+local LootService = require(script.Parent.LootService)
 local EnemyService = require(script.Parent.EnemyService)
 
--- LootService is required by EnemyService; no direct Init needed.
+-- Initialization order matters:
+-- 1. CurrencyService: must be ready before LootService can award coins.
+-- 2. LootService: must be ready before EnemyService death handlers fire.
+-- 3. CombatService: wires the PartAttack remote.
+-- 4. PlayerBuildService: wires build remotes and BuildChanged event.
+-- 5. EnemyService: spawns enemies and starts AI loop.
 
 CurrencyService.Init()
+LootService.Init()
 CombatService.Init()
 PlayerBuildService.Init()
 EnemyService.Init()
