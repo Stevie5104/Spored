@@ -79,14 +79,15 @@ function CombatService.DamageNPC(target: Model, amount: number, attacker: Player
 	humanoid:TakeDamage(amount)
 end
 
--- Damage a player character (server-side only).
+-- Damage a player organism (server-side only).
+-- Applies damage to the Health NumberValue stored on the organism model.
 function CombatService.DamagePlayer(target: Player, amount: number, attacker: Model?)
 	assert(amount >= 0, "DamagePlayer: damage amount must be non-negative")
 	local character = target.Character
 	if not character then return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid") :: Humanoid?
-	if not humanoid or humanoid.Health <= 0 then return end
-	humanoid:TakeDamage(amount)
+	local healthVal = character:FindFirstChild("Health") :: NumberValue?
+	if not healthVal or healthVal.Value <= 0 then return end
+	healthVal.Value = math.max(0, healthVal.Value - amount)
 end
 
 -- Part-triggered attack hook: validates and processes an attack request from a client.
@@ -99,10 +100,10 @@ function CombatService.HandlePartAttack(
 	-- Validate attacker character exists and is alive.
 	local character = attacker.Character
 	if not character then return false end
-	local attackerRoot = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local attackerRoot = character:FindFirstChild("OrganismRootPart") :: BasePart?
 	if not attackerRoot then return false end
-	local attackerHumanoid = character:FindFirstChildOfClass("Humanoid") :: Humanoid?
-	if not attackerHumanoid or attackerHumanoid.Health <= 0 then return false end
+	local healthVal = character:FindFirstChild("Health") :: NumberValue?
+	if not healthVal or healthVal.Value <= 0 then return false end
 
 	-- Validate the part definition exists.
 	local partDef = PartData[partId]

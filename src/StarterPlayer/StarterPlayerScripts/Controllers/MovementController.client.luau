@@ -14,20 +14,29 @@
 --
 -- Both modes feed the same velocity backend (acceleration + drag = floaty feel).
 -- Press [1] to switch to ClickToMove, [2] to switch to WASDMouseAim.
+--
+-- Movement stats are derived from OrganismEntity.ComputeStats() each time the
+-- player's build changes (BuildChanged RemoteEvent) so that equipped parts such
+-- as DashFlagella (+10 speed via Swift trait) take effect immediately.
 
-local Players = game:GetService("Players")
+local Players         = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
+local RunService      = game:GetService("RunService")
+local Workspace       = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local OrganismEntity  = require(ReplicatedStorage.Modules.OrganismEntity)
 
 local player = Players.LocalPlayer
 
--- ── Movement stats (overridable by body stats in a future update) ─────────────
-local MOVE_SPEED = 24
-local ACCELERATION = 80
-local DRAG = 10
-local TURN_SPEED = math.rad(540)
-local STOP_DIST = 1.5
+-- ── Live movement stats (updated from OrganismEntity.ComputeStats) ────────────
+-- These defaults match the StarterBlob body and are overwritten on the first
+-- BuildChanged event, so they are always accurate once a build is broadcast.
+local MOVE_SPEED  : number = 24
+local ACCELERATION: number = 80
+local TURN_SPEED  : number = math.rad(540)
+local DRAG        = 10
+local STOP_DIST   = 1.5
 local MOVE_PLANE_Y = 0
 
 -- ── Feature flags ─────────────────────────────────────────────────────────────
@@ -40,7 +49,6 @@ local controlMode: ControlMode = "ClickToMove"
 
 -- ── Runtime state ─────────────────────────────────────────────────────────────
 local rootPart: BasePart? = nil
-local humanoid: Humanoid? = nil
 local velocity = Vector3.zero
 local clickTarget: Vector3? = nil
 
@@ -95,20 +103,63 @@ local function rotateToward(current: CFrame, dir: Vector3, dt: number): CFrame
 end
 
 -- ── Character binding ──────────────────────────────────────────────────────────
+-- Binds to the custom organism model set as player.Character by OrganismService.
+-- The organism has "OrganismRootPart" instead of "HumanoidRootPart" and no
+-- Humanoid, so movement is applied purely through AssemblyLinearVelocity.
 
 local function bindCharacter(char: Model)
-	rootPart = char:WaitForChild("HumanoidRootPart") :: BasePart
-	humanoid = char:WaitForChild("Humanoid") :: Humanoid
-	humanoid.AutoRotate = false
-	velocity = Vector3.zero
+	rootPart = char:WaitForChild("OrganismRootPart") :: BasePart
+	velocity    = Vector3.zero
 	clickTarget = nil
-	isDragging = false
+	isDragging  = false
 end
 
 player.CharacterAdded:Connect(bindCharacter)
 if player.Character then
 	bindCharacter(player.Character)
 end
+
+-- ── Build-state sync: update movement stats when equipped parts change ─────────
+-- When the server broadcasts a BuildChanged event, recompute OrganismStats so
+-- that movement parts (fins, flagella) immediately affect speed/turn rate.
+
+local currentBodyId = "StarterBlob"
+local currentSlots: { [string]: string } = {}
+
+local function applyStats(bodyId: string, slots: { [string]: string })
+	currentBodyId = bodyId
+	currentSlots  = slots
+	local stats = OrganismEntity.ComputeStats(bodyId, slots)
+	MOVE_SPEED   = stats.MoveSpeed
+	ACCELERATION = stats.Acceleration
+	TURN_SPEED   = stats.TurnSpeed
+end
+
+task.spawn(function()
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10) :: Folder?
+	if not remotes then
+		warn("[MovementController] Remotes folder not found – movement stats will remain at body defaults and will not update when build changes.")
+		return
+	end
+
+	local buildChanged = remotes:WaitForChild("BuildChanged", 10) :: RemoteEvent?
+	if not buildChanged then
+		warn("[MovementController] BuildChanged remote not found – movement speed will not update when parts are equipped or swapped.")
+		return
+	end
+
+	buildChanged.OnClientEvent:Connect(function(bodyId: unknown, slots: unknown)
+		if typeof(bodyId) ~= "string" then return end
+		if typeof(slots) ~= "table" then return end
+		local typedSlots: { [string]: string } = {}
+		for k, v in slots :: { [any]: any } do
+			if typeof(k) == "string" and typeof(v) == "string" then
+				typedSlots[k :: string] = v :: string
+			end
+		end
+		applyStats(bodyId :: string, typedSlots)
+	end)
+end)
 
 -- ── Input handling ────────────────────────────────────────────────────────────
 --
@@ -140,7 +191,7 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
 	elseif input.KeyCode == Enum.KeyCode.Two then
 		controlMode = "WASDMouseAim"
 		clickTarget = nil
-		isDragging = false
+		isDragging  = false
 
 	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = true; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = true; recomputeMoveInput()
@@ -166,11 +217,10 @@ end)
 -- ── Shared movement backend (RenderStepped) ───────────────────────────────────
 
 RunService.RenderStepped:Connect(function(dt: number)
-	if not rootPart or not humanoid then return end
-	if humanoid.Health <= 0 then return end
+	if not rootPart then return end
 
-	local pos = rootPart.Position
-	local desiredMoveDir = Vector3.zero
+	local pos           = rootPart.Position
+	local desiredMoveDir  = Vector3.zero
 	local desiredFacingDir = Vector3.zero
 
 	if controlMode == "ClickToMove" then
@@ -188,7 +238,7 @@ RunService.RenderStepped:Connect(function(dt: number)
 			if toTarget.Magnitude <= STOP_DIST then
 				clickTarget = nil
 			else
-				desiredMoveDir = toTarget.Unit
+				desiredMoveDir  = toTarget.Unit
 				desiredFacingDir = desiredMoveDir
 			end
 		end
@@ -196,9 +246,9 @@ RunService.RenderStepped:Connect(function(dt: number)
 	elseif controlMode == "WASDMouseAim" then
 		local cam = Workspace.CurrentCamera
 		if cam and moveInput.Magnitude > 0 then
-			local look = flatten(cam.CFrame.LookVector)
+			local look  = flatten(cam.CFrame.LookVector)
 			local right = flatten(cam.CFrame.RightVector)
-			if look.Magnitude > 1e-4 then look = look.Unit end
+			if look.Magnitude  > 1e-4 then look  = look.Unit  end
 			if right.Magnitude > 1e-4 then right = right.Unit end
 
 			local world = right * moveInput.X + look * moveInput.Z
@@ -217,8 +267,8 @@ RunService.RenderStepped:Connect(function(dt: number)
 
 	-- Acceleration toward desired velocity.
 	local target = desiredMoveDir * MOVE_SPEED
-	local dv = target - velocity
-	local step = ACCELERATION * dt
+	local dv     = target - velocity
+	local step   = ACCELERATION * dt
 	velocity += if dv.Magnitude > step then dv.Unit * step else dv
 
 	-- Drag (floaty decay).
@@ -234,3 +284,4 @@ RunService.RenderStepped:Connect(function(dt: number)
 		rootPart.CFrame = rotateToward(rootPart.CFrame, facing, dt)
 	end
 end)
+

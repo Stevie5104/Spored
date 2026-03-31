@@ -91,7 +91,7 @@ end)
 local function getAimDirection(): Vector3?
 	local character = player.Character
 	if not character then return nil end
-	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local root = character:FindFirstChild("OrganismRootPart") :: BasePart?
 	if not root then return nil end
 
 	local mouseWorld = mouseToPlane(MOVE_PLANE_Y)
@@ -106,7 +106,7 @@ end
 local function findTargetInAim(maxRange: number): number?
 	local character = player.Character
 	if not character then return nil end
-	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local root = character:FindFirstChild("OrganismRootPart") :: BasePart?
 	if not root then return nil end
 
 	local aimDir = getAimDirection()

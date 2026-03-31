@@ -39,7 +39,7 @@ local function nearestPlayerRoot(pos: Vector3, maxDist: number): (BasePart?, Pla
 	for _, player in Players:GetPlayers() do
 		local char = player.Character
 		if char then
-			local rp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			local rp = char:FindFirstChild("OrganismRootPart") :: BasePart?
 			if rp then
 				local d = (rp.Position - pos).Magnitude
 				if d < bestDist then
@@ -83,7 +83,7 @@ local function spawnPoisonPool(pos: Vector3, combatService: any)
 			for _, player in Players:GetPlayers() do
 				local char = player.Character
 				if char then
-					local rp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+					local rp = char:FindFirstChild("OrganismRootPart") :: BasePart?
 					if rp then
 						local flatDist = Vector3.new(
 							rp.Position.X - pos.X,
@@ -145,7 +145,7 @@ local function fireProjectile(fromPos: Vector3, toPos: Vector3, damage: number, 
 		for _, player in Players:GetPlayers() do
 			local char = player.Character
 			if char then
-				local rp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+				local rp = char:FindFirstChild("OrganismRootPart") :: BasePart?
 				if rp then
 					local dist = (rp.Position - projectile.Position).Magnitude
 					if dist < PROJECTILE_HIT_RADIUS then

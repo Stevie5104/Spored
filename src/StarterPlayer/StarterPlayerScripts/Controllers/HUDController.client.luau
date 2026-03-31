@@ -203,12 +203,15 @@ end
 
 -- ── RenderStepped: update health + cooldowns + expire toasts ─────────────────
 RunService.RenderStepped:Connect(function(_dt: number)
-	-- Health bar.
+	-- Health bar: read from organism Health/MaxHealth NumberValues (no Humanoid).
 	local char = player.Character
 	if char then
-		local hum = char:FindFirstChildOfClass("Humanoid") :: Humanoid?
-		if hum then
-			local ratio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+		local healthVal    = char:FindFirstChild("Health")    :: NumberValue?
+		local maxHealthVal = char:FindFirstChild("MaxHealth") :: NumberValue?
+		if healthVal and maxHealthVal then
+			local hp    = healthVal.Value
+			local maxHp = math.max(maxHealthVal.Value, 1)
+			local ratio = math.clamp(hp / maxHp, 0, 1)
 			healthFill.Size = UDim2.new(ratio, 0, 1, 0)
 
 			-- Color: green (full) → yellow (half) → red (low).
@@ -218,8 +221,8 @@ RunService.RenderStepped:Connect(function(_dt: number)
 
 			healthText.Text = string.format(
 				"HP: %d / %d",
-				math.floor(hum.Health),
-				math.floor(hum.MaxHealth)
+				math.floor(hp),
+				math.floor(maxHp)
 			)
 		end
 	end

@@ -28,7 +28,7 @@ local currentCFrame: CFrame? = nil
 -- ── Character binding ─────────────────────────────────────────────────────────
 
 local function bindCharacter(char: Model)
-	targetPart = char:WaitForChild("HumanoidRootPart") :: BasePart
+	targetPart = char:WaitForChild("OrganismRootPart") :: BasePart
 	currentCFrame = nil
 end
 
