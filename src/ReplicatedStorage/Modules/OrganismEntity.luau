@@ -152,9 +152,10 @@ function OrganismEntity.new(bodyId: string): OrganismInstance
 	root.Size                         = DEFAULT_ROOT_SIZE
 	root.Color                        = DEFAULT_COLOR
 	root.Material                     = Enum.Material.SmoothPlastic
-	root.Anchored                     = false
-	root.CanCollide                   = true
-	root.CastShadow                   = true
+	root.Anchored                     = true
+	root.CanCollide                   = false
+	root.Transparency                 = 1
+	root.CastShadow                   = false
 	root.CustomPhysicalProperties     = PhysicalProperties.new(
 		ORGANISM_DENSITY,
 		ORGANISM_FRICTION,

@@ -13,17 +13,34 @@
 --   OrganismService.RespawnOrganism(player)
 --   OrganismService.Init()
 
-local Players   = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local Players           = game:GetService("Players")
+local Workspace         = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local OrganismEntity = require(game:GetService("ReplicatedStorage").Modules.OrganismEntity)
+local OrganismEntity = require(ReplicatedStorage.Modules.OrganismEntity)
 
 local OrganismService = {}
 
 -- Per-player live OrganismInstance references, keyed by UserId.
 local organisms: { [number]: typeof(OrganismEntity.new("StarterBlob")) } = {}
 
+-- Seconds to wait before respawning after CharacterRemoving fires.
+-- Provides a brief window for cleanup/replication to propagate.
+local RESPAWN_DELAY = 1
+
 -- ── Internal ──────────────────────────────────────────────────────────────────
+
+-- Folder in Workspace that holds all organism models.
+-- Clients can WaitForChild("Organisms") on Workspace to locate organisms.
+local function getOrganismsFolder(): Folder
+	local folder = Workspace:FindFirstChild("Organisms") :: Folder?
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name   = "Organisms"
+		folder.Parent = Workspace
+	end
+	return folder :: Folder
+end
 
 local function getSpawnCFrame(): CFrame
 	-- Prefer an explicit SpawnLocation; fall back to world origin above baseplate.
@@ -45,7 +62,9 @@ local function spawnOrganism(player: Player)
 	local organism            = OrganismEntity.new("StarterBlob")
 	organism.Model.Name       = "Organism_" .. player.Name
 	organism.RootPart.CFrame  = getSpawnCFrame()
-	organism.Model.Parent     = Workspace
+	-- Parent to the Organisms folder so clients have a stable, replication-safe
+	-- location to find organism models without polling player.Character.
+	organism.Model.Parent     = getOrganismsFolder()
 
 	organisms[player.UserId] = organism
 
@@ -79,7 +98,19 @@ function OrganismService.Init()
 	-- Prevent the engine from auto-spawning the default Humanoid avatar.
 	Players.CharacterAutoLoads = false
 
-	Players.PlayerAdded:Connect(spawnOrganism)
+	Players.PlayerAdded:Connect(function(player: Player)
+		spawnOrganism(player)
+
+		-- Re-spawn organism when it is removed (death / future mechanics).
+		player.CharacterRemoving:Connect(function()
+			task.wait(RESPAWN_DELAY)
+			-- player.Parent is non-nil only while the player is still connected.
+			if player.Parent then
+				spawnOrganism(player)
+			end
+		end)
+	end)
+
 	Players.PlayerRemoving:Connect(cleanPlayer)
 
 	-- Spawn organisms for any players already in-game at init time.
