@@ -42,7 +42,7 @@ local function nearestPlayerRoot(pos: Vector3, maxDist: number): (BasePart?, Pla
 	for _, p in Players:GetPlayers() do
 		local char = p.Character
 		if char then
-			local rp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			local rp = char:FindFirstChild("OrganismRootPart") :: BasePart?
 			if rp then
 				local d = (rp.Position - pos).Magnitude
 				if d < bestDist then

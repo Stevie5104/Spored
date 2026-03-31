@@ -15,6 +15,10 @@
 --
 -- Both modes feed the same velocity backend (acceleration + drag = floaty feel).
 -- Press [1] to switch to ClickToMove, [2] to switch to WASDMouseAim.
+--
+-- Movement stats are derived from OrganismEntity.ComputeStats() each time the
+-- player's build changes (BuildChanged RemoteEvent) so that equipped parts such
+-- as DashFlagella (+10 speed via Swift trait) take effect immediately.
 
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -101,6 +105,9 @@ local function stepYaw(yaw: number, dir: Vector3, dt: number): number
 end
 
 -- ── Character binding ──────────────────────────────────────────────────────────
+-- Binds to the custom organism model set as player.Character by OrganismService.
+-- The organism has "OrganismRootPart" instead of "HumanoidRootPart" and no
+-- Humanoid, so movement is applied purely through AssemblyLinearVelocity.
 
 local function bindCharacter(char: Model)
 	-- The custom organism has no Humanoid – only wait for the root part.
@@ -124,6 +131,48 @@ player.CharacterAdded:Connect(bindCharacter)
 if player.Character then
 	bindCharacter(player.Character)
 end
+
+-- ── Build-state sync: update movement stats when equipped parts change ─────────
+-- When the server broadcasts a BuildChanged event, recompute OrganismStats so
+-- that movement parts (fins, flagella) immediately affect speed/turn rate.
+
+local currentBodyId = "StarterBlob"
+local currentSlots: { [string]: string } = {}
+
+local function applyStats(bodyId: string, slots: { [string]: string })
+	currentBodyId = bodyId
+	currentSlots  = slots
+	local stats = OrganismEntity.ComputeStats(bodyId, slots)
+	MOVE_SPEED   = stats.MoveSpeed
+	ACCELERATION = stats.Acceleration
+	TURN_SPEED   = stats.TurnSpeed
+end
+
+task.spawn(function()
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10) :: Folder?
+	if not remotes then
+		warn("[MovementController] Remotes folder not found – movement stats will remain at body defaults and will not update when build changes.")
+		return
+	end
+
+	local buildChanged = remotes:WaitForChild("BuildChanged", 10) :: RemoteEvent?
+	if not buildChanged then
+		warn("[MovementController] BuildChanged remote not found – movement speed will not update when parts are equipped or swapped.")
+		return
+	end
+
+	buildChanged.OnClientEvent:Connect(function(bodyId: unknown, slots: unknown)
+		if typeof(bodyId) ~= "string" then return end
+		if typeof(slots) ~= "table" then return end
+		local typedSlots: { [string]: string } = {}
+		for k, v in slots :: { [any]: any } do
+			if typeof(k) == "string" and typeof(v) == "string" then
+				typedSlots[k :: string] = v :: string
+			end
+		end
+		applyStats(bodyId :: string, typedSlots)
+	end)
+end)
 
 -- ── Input handling ────────────────────────────────────────────────────────────
 --

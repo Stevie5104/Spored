@@ -31,7 +31,7 @@ local CATEGORY_COLORS: { [string]: Color3 } = {
 	Utility  = Color3.fromRGB(240, 200, 50),  -- utility gold
 }
 
--- Local-space offsets for each slot name (relative to HumanoidRootPart).
+-- Local-space offsets for each slot name (relative to OrganismRootPart).
 local SLOT_OFFSETS: { [string]: Vector3 } = {
 	Front  = Vector3.new(0, 0, -3),
 	Front2 = Vector3.new(0, 0, -4.5),
@@ -105,7 +105,7 @@ end
 
 -- Applies body + part visuals to the character based on the given build state.
 local function applyVisuals(character: Model, bodyId: string, slots: { [string]: string })
-	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local rootPart = character:FindFirstChild("OrganismRootPart") :: BasePart?
 	if not rootPart then return end
 
 	clearVisuals(character)
@@ -153,14 +153,14 @@ end
 -- Re-apply visuals whenever the character respawns.
 player.CharacterAdded:Connect(function(character: Model)
 	-- Wait for the root to fully load before placing geometry.
-	character:WaitForChild("HumanoidRootPart", 5)
+	character:WaitForChild("OrganismRootPart", 5)
 	task.wait()  -- defer one Heartbeat step to let the character settle before placing geometry
 	applyVisuals(character, latestBodyId, latestSlots)
 end)
 
 -- Apply to any existing character at script startup.
 if player.Character then
-	local root = player.Character:FindFirstChild("HumanoidRootPart")
+	local root = player.Character:FindFirstChild("OrganismRootPart")
 	if root then
 		applyVisuals(player.Character, latestBodyId, latestSlots)
 	end

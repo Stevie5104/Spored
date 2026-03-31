@@ -5,9 +5,10 @@ local CharacterService   = require(script.Parent.CharacterService)
 local CurrencyService    = require(script.Parent.CurrencyService)
 local CombatService      = require(script.Parent.CombatService)
 local PlayerBuildService = require(script.Parent.PlayerBuildService)
-local LootService = require(script.Parent.LootService)
-local EnemyService = require(script.Parent.EnemyService)
-local DataService = require(script.Parent.DataService)
+local LootService      = require(script.Parent.LootService)
+local EnemyService     = require(script.Parent.EnemyService)
+local DataService      = require(script.Parent.DataService)
+local OrganismService  = require(script.Parent.OrganismService)
 
 -- Initialization order matters:
 -- 0. CharacterService: must disable CharacterAutoLoads and register

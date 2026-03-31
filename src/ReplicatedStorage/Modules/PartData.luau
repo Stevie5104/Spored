@@ -1,5 +1,13 @@
 --!strict
 -- PartData: defines available mutation parts with stats, rarity, and slot compatibility.
+--
+-- ValidSlots lists the specific named slots that accept each part.  The list
+-- must be consistent with the slot-type ↔ part-category rule enforced by
+-- OrganismEntity and PlayerBuildService:
+--   front slots  (Front, Front2)           → Attack   parts only
+--   side  slots  (Left, Right, Left2, Right2) → Defense  parts only
+--   rear  slots  (Rear, Rear2)             → Movement parts only
+--   core  slot   (Core)                    → Utility  parts only
 
 export type Rarity = "Common" | "Rare" | "Epic" | "Legendary" | "Mythic" | "Ancient"
 export type Category = "Attack" | "Defense" | "Movement" | "Utility"
@@ -44,8 +52,8 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 18,
 		Range = 5,
 		CapacityCost = 3,
-		ValidSlots = { "Left", "Right", "Left2", "Right2" },
-		Description = "A side-mounted claw with good reach.",
+		ValidSlots = { "Front", "Front2" },
+		Description = "A forward-mounted claw with good reach.",
 	},
 
 	AcidSpitter = {
@@ -57,7 +65,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 14,
 		Range = 10,
 		CapacityCost = 4,
-		ValidSlots = { "Front", "Front2", "Core" },
+		ValidSlots = { "Front", "Front2" },
 		Description = "Fires acid projectiles. Lower damage but fast rate and good range.",
 	},
 
@@ -70,7 +78,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 25,
 		Range = 7,
 		CapacityCost = 4,
-		ValidSlots = { "Left", "Right", "Front" },
+		ValidSlots = { "Front", "Front2" },
 		Description = "Arcing electric lash that can chain to nearby enemies.",
 		Traits = { "Volatile" },
 	},
@@ -85,7 +93,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 0,
 		Range = 0,
 		CapacityCost = 3,
-		ValidSlots = { "Left", "Right", "Left2", "Right2", "Rear" },
+		ValidSlots = { "Left", "Right", "Left2", "Right2" },
 		Description = "Passive armor plating that reduces incoming damage.",
 		Traits = { "Resilient" },
 	},
@@ -99,7 +107,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 20,
 		Range = 0,
 		CapacityCost = 3,
-		ValidSlots = { "Core", "Left", "Right" },
+		ValidSlots = { "Left", "Right" },
 		Description = "Periodically absorbs a portion of incoming damage.",
 	},
 
@@ -127,7 +135,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 22,
 		Range = 0,
 		CapacityCost = 3,
-		ValidSlots = { "Rear", "Rear2", "Core" },
+		ValidSlots = { "Rear", "Rear2" },
 		Description = "Sustained speed boost for a short duration.",
 	},
 
@@ -155,7 +163,7 @@ local PartData: { [string]: PartDef } = {
 		EnergyCost = 25,
 		Range = 6,
 		CapacityCost = 4,
-		ValidSlots = { "Rear", "Core" },
+		ValidSlots = { "Core" },
 		Description = "Releases a poisonous cloud behind the organism.",
 	},
 }

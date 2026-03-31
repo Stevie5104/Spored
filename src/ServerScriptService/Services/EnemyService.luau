@@ -144,7 +144,7 @@ function EnemyService.SpawnEnemy(typeId: string, position: Vector3): Model?
 		for _, player in Players:GetPlayers() do
 			local char = player.Character
 			if char then
-				local rp = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+				local rp = char:FindFirstChild("OrganismRootPart") :: BasePart?
 				if rp then
 					local dist = (rp.Position - root.Position).Magnitude
 					if dist < bestDist then

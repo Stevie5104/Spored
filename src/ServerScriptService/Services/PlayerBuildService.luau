@@ -2,8 +2,9 @@
 -- PlayerBuildService: server-side validation for equipping/unequipping parts to slots.
 -- Broadcasts BuildChanged RemoteEvent to the owning player after any build modification.
 
-local BodyData = require(game:GetService("ReplicatedStorage").Modules.BodyData)
-local PartData = require(game:GetService("ReplicatedStorage").Modules.PartData)
+local BodyData       = require(game:GetService("ReplicatedStorage").Modules.BodyData)
+local PartData       = require(game:GetService("ReplicatedStorage").Modules.PartData)
+local OrganismEntity = require(game:GetService("ReplicatedStorage").Modules.OrganismEntity)
 
 local PlayerBuildService = {}
 
@@ -80,16 +81,17 @@ function PlayerBuildService.EquipPart(player: Player, slotName: string, partId: 
 		return false, "Slot '" .. slotName .. "' does not exist on body '" .. build.BodyId .. "'"
 	end
 
-	-- Check slot type compatibility
-	local slotCompatible = false
-	for _, validSlot in partDef.ValidSlots do
-		if validSlot == slotName then
-			slotCompatible = true
-			break
-		end
-	end
-	if not slotCompatible then
-		return false, "Part '" .. partId .. "' is not compatible with slot '" .. slotName .. "'"
+	-- Check slot type compatibility: the part's category must match the slot type.
+	-- (front=Attack, side=Defense, rear=Movement, core=Utility)
+	if not OrganismEntity.IsPartCompatibleWithSlot(partDef.Category, slotName) then
+		return false, string.format(
+			"Part category '%s' is not compatible with slot '%s' (expected '%s')",
+			partDef.Category,
+			slotName,
+			OrganismEntity.GetSlotCompatibleCategory(
+				OrganismEntity.GetSlotType(slotName) or ""
+			) or "unknown"
+		)
 	end
 
 	-- Compute capacity after equip (remove existing part in slot first)
