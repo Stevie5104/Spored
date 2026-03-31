@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 
 local PartData = require(game:GetService("ReplicatedStorage").Modules.PartData)
+local TraitData = require(game:GetService("ReplicatedStorage").Modules.TraitData)
 
 -- Lazy-require to avoid circular dependency (PlayerBuildService also requires nothing here).
 local PlayerBuildService: any = nil
@@ -25,6 +26,33 @@ local COOLDOWN_TOLERANCE_BUFFER = 0.1  -- seconds
 -- Server-side range is multiplied by this factor to allow for latency and movement.
 -- Set to 2× the stated part range so fast-moving players aren't unfairly rejected.
 local RANGE_LATENCY_MULTIPLIER = 2
+
+-- ── Trait-adjusted damage ─────────────────────────────────────────────────────
+
+-- Compute effective damage for a part after applying its Trait modifiers.
+-- Only "Damage" stat modifiers are applied at attack time; stat modifiers for
+-- health, cooldown, or move speed are handled elsewhere (e.g., on build change).
+local function computeDamage(partDef: PartData.PartDef): number
+	local damage: number = partDef.Damage
+	local traits = partDef.Traits
+	if traits then
+		for _, traitId in traits do
+			local traitDef = TraitData[traitId]
+			if traitDef then
+				for _, mod in traitDef.Modifiers do
+					if mod.Stat == "Damage" then
+						if mod.Type == "Multiply" then
+							damage *= mod.Value
+						elseif mod.Type == "Add" then
+							damage += mod.Value
+						end
+					end
+				end
+			end
+		end
+	end
+	return math.max(0, math.round(damage))
+end
 
 -- Server-side cooldown tracking: [userId][partId] = lastActivationClock
 local serverCooldowns: { [number]: { [string]: number } } = {}
@@ -127,10 +155,11 @@ function CombatService.HandlePartAttack(
 			return false
 		end
 
-		-- Apply authoritative damage from part stats.
-		CombatService.DamageNPC(model, partDef.Damage, attacker)
+		-- Apply trait-adjusted damage from part stats.
+		local effectiveDamage = computeDamage(partDef)
+		CombatService.DamageNPC(model, effectiveDamage, attacker)
 		print(string.format("[CombatService] %s used '%s' on %s for %d dmg",
-			attacker.Name, partId, model.Name, partDef.Damage))
+			attacker.Name, partId, model.Name, effectiveDamage))
 		return true
 	end
 

@@ -13,6 +13,7 @@ local LootService = require(script.Parent.LootService)
 local GrazerAI = require(script.Parent.AI.GrazerAI)
 local SpikeWormAI = require(script.Parent.AI.SpikeWormAI)
 local VenomBlobAI = require(script.Parent.AI.VenomBlobAI)
+local HunterCellAI = require(script.Parent.AI.HunterCellAI)
 
 -- CombatService is required lazily to avoid circular dependency.
 local CombatService: any = nil
@@ -24,6 +25,9 @@ local function getCombat()
 end
 
 local EnemyService = {}
+
+-- How many seconds after death before an enemy respawns at its spawn position.
+local RESPAWN_DELAY = 25
 
 -- Folder that holds all enemy models in Workspace.
 local enemiesFolder: Folder
@@ -116,8 +120,10 @@ function EnemyService.SpawnEnemy(typeId: string, position: Vector3): Model?
 		aiState = SpikeWormAI.NewState(position)
 	elseif typeId == "VenomBlob" then
 		aiState = VenomBlobAI.NewState()
+	elseif typeId == "HunterCell" then
+		aiState = HunterCellAI.NewState(position)
 	else
-		aiState = {}  -- no AI for other types yet
+		aiState = {}  -- fallback for unknown types
 	end
 
 	activeEnemies[id] = {
@@ -163,6 +169,11 @@ function EnemyService.SpawnEnemy(typeId: string, position: Vector3): Model?
 				model:Destroy()
 			end
 		end)
+
+		-- Respawn this enemy at its original position after a delay.
+		task.delay(RESPAWN_DELAY, function()
+			EnemyService.SpawnEnemy(typeId, position)
+		end)
 	end)
 
 	return model
@@ -201,6 +212,9 @@ local function onHeartbeat(dt: number)
 
 		elseif typeId == "VenomBlob" then
 			VenomBlobAI.Update(entry.Model, def, entry.AIState, tickDt, combat)
+
+		elseif typeId == "HunterCell" then
+			HunterCellAI.Update(entry.Model, def, entry.AIState, tickDt, entry.SpawnPos, combat)
 		end
 	end
 end
@@ -214,9 +228,10 @@ local function spawnInitialWave()
 		Vector3.new(-20, 0, -20),
 		Vector3.new(40, 0, 0),
 		Vector3.new(-40, 0, 0),
+		Vector3.new(0, 0, 40),
 	}
 
-	local types = { "Grazer", "Grazer", "SpikeWorm", "VenomBlob" }
+	local types = { "Grazer", "Grazer", "SpikeWorm", "VenomBlob", "SpikeWorm", "VenomBlob", "HunterCell" }
 	for i, pos in spawnPoints do
 		local typeId = types[((i - 1) % #types) + 1]
 		EnemyService.SpawnEnemy(typeId, pos)
