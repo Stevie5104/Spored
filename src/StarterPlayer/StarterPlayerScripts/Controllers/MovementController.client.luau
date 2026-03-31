@@ -1,7 +1,15 @@
 --!strict
 -- MovementController: top-down organism movement supporting two input modes.
 --
--- Mode 1 (ClickToMove): left-click a world position; organism swims toward it.
+-- Mode 1 (ClickToMove):
+--   • Single click  – organism swims to the clicked world position.
+--   • Click-and-drag – hold the left mouse button and move the cursor;
+--     clickTarget updates every frame while the button is held so the
+--     organism continuously tracks the cursor.  On release the organism
+--     keeps heading toward the last cursor position until it arrives.
+--
+--   To DISABLE drag behaviour set DRAG_ENABLED = false below.
+--
 -- Mode 2 (WASDMouseAim): WASD drives movement; mouse controls aim/facing.
 --
 -- Both modes feed the same velocity backend (acceleration + drag = floaty feel).
@@ -22,6 +30,10 @@ local TURN_SPEED = math.rad(540)
 local STOP_DIST = 1.5
 local MOVE_PLANE_Y = 0
 
+-- ── Feature flags ─────────────────────────────────────────────────────────────
+-- Set DRAG_ENABLED = false to revert to single-click-only behaviour.
+local DRAG_ENABLED = true
+
 -- ── Control modes ─────────────────────────────────────────────────────────────
 type ControlMode = "ClickToMove" | "WASDMouseAim"
 local controlMode: ControlMode = "ClickToMove"
@@ -31,6 +43,11 @@ local rootPart: BasePart? = nil
 local humanoid: Humanoid? = nil
 local velocity = Vector3.zero
 local clickTarget: Vector3? = nil
+
+-- isDragging is true while MouseButton1 is held in ClickToMove mode.
+-- Each RenderStepped frame the cursor world position overwrites clickTarget
+-- so the path continuously tracks the cursor.
+local isDragging = false
 
 local keyState = { W = false, A = false, S = false, D = false }
 local moveInput = Vector3.zero
@@ -85,6 +102,7 @@ local function bindCharacter(char: Model)
 	humanoid.AutoRotate = false
 	velocity = Vector3.zero
 	clickTarget = nil
+	isDragging = false
 end
 
 player.CharacterAdded:Connect(bindCharacter)
@@ -93,13 +111,27 @@ if player.Character then
 end
 
 -- ── Input handling ────────────────────────────────────────────────────────────
+--
+-- ClickToMove input flow:
+--   MouseButton1 Down → set isDragging = true, sample initial clickTarget.
+--   While held (isDragging)  → RenderStepped refreshes clickTarget each frame.
+--   MouseButton1 Up   → clear isDragging; organism continues to last position.
+--
+-- To disable drag: set DRAG_ENABLED = false at the top of this file.
 
 UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
 	if processed then return end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		if controlMode == "ClickToMove" then
-			clickTarget = mouseToPlane(MOVE_PLANE_Y)
+			-- Record initial click target.
+			local hit = mouseToPlane(MOVE_PLANE_Y)
+			clickTarget = hit
+			-- Begin drag tracking only when the cursor maps to a valid world
+			-- position and the feature is enabled.
+			if DRAG_ENABLED and hit ~= nil then
+				isDragging = true
+			end
 		end
 
 	elseif input.KeyCode == Enum.KeyCode.One then
@@ -108,6 +140,7 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
 	elseif input.KeyCode == Enum.KeyCode.Two then
 		controlMode = "WASDMouseAim"
 		clickTarget = nil
+		isDragging = false
 
 	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = true; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = true; recomputeMoveInput()
@@ -119,7 +152,11 @@ end)
 UserInputService.InputEnded:Connect(function(input: InputObject, processed: boolean)
 	if processed then return end
 
-	if input.KeyCode == Enum.KeyCode.W then keyState.W = false; recomputeMoveInput()
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		-- Stop drag; organism keeps heading toward the last sampled position.
+		isDragging = false
+
+	elseif input.KeyCode == Enum.KeyCode.W then keyState.W = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.A then keyState.A = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.S then keyState.S = false; recomputeMoveInput()
 	elseif input.KeyCode == Enum.KeyCode.D then keyState.D = false; recomputeMoveInput()
@@ -137,6 +174,15 @@ RunService.RenderStepped:Connect(function(dt: number)
 	local desiredFacingDir = Vector3.zero
 
 	if controlMode == "ClickToMove" then
+		-- While the mouse button is held, continuously refresh the target so
+		-- the organism tracks the cursor (drag-to-move behaviour).
+		if isDragging then
+			local hit = mouseToPlane(MOVE_PLANE_Y)
+			if hit then
+				clickTarget = hit
+			end
+		end
+
 		if clickTarget then
 			local toTarget = flatten(clickTarget - pos)
 			if toTarget.Magnitude <= STOP_DIST then
