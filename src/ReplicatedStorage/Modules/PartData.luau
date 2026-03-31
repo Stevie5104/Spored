@@ -15,6 +15,7 @@ export type PartDef = {
 	CapacityCost: number,
 	ValidSlots: { [number]: string },
 	Description: string,
+	Traits: { [number]: string }?,  -- optional list of TraitData keys applied to this part
 }
 
 local PartData: { [string]: PartDef } = {
@@ -31,6 +32,7 @@ local PartData: { [string]: PartDef } = {
 		CapacityCost = 2,
 		ValidSlots = { "Front", "Front2" },
 		Description = "A basic bite attack aimed forward.",
+		Traits = { "Savage" },
 	},
 
 	ClawArm = {
@@ -70,6 +72,7 @@ local PartData: { [string]: PartDef } = {
 		CapacityCost = 4,
 		ValidSlots = { "Left", "Right", "Front" },
 		Description = "Arcing electric lash that can chain to nearby enemies.",
+		Traits = { "Volatile" },
 	},
 
 	-- Defense
@@ -84,6 +87,7 @@ local PartData: { [string]: PartDef } = {
 		CapacityCost = 3,
 		ValidSlots = { "Left", "Right", "Left2", "Right2", "Rear" },
 		Description = "Passive armor plating that reduces incoming damage.",
+		Traits = { "Resilient" },
 	},
 
 	AbsorptionMembrane = {
@@ -111,6 +115,7 @@ local PartData: { [string]: PartDef } = {
 		CapacityCost = 2,
 		ValidSlots = { "Rear", "Rear2" },
 		Description = "Provides a short forward dash on activation.",
+		Traits = { "Swift" },
 	},
 
 	JetSac = {
@@ -138,6 +143,7 @@ local PartData: { [string]: PartDef } = {
 		CapacityCost = 3,
 		ValidSlots = { "Core" },
 		Description = "Restores a portion of health on activation.",
+		Traits = { "Efficient" },
 	},
 
 	ToxinCloud = {
