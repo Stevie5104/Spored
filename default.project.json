@@ -6,12 +6,18 @@
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"
+      },
+      "Modules": {
+        "$path": "src/ReplicatedStorage/Modules"
       }
     },
 
     "ServerScriptService": {
       "Server": {
         "$path": "src/server"
+      },
+      "Services": {
+        "$path": "src/ServerScriptService/Services"
       }
     },
 
@@ -19,6 +25,9 @@
       "StarterPlayerScripts": {
         "Client": {
           "$path": "src/client"
+        },
+        "Controllers": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts/Controllers"
         }
       }
     },
